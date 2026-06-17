@@ -15,7 +15,7 @@
             font-family: 'Courier New', Courier, monospace;
         }
 
-        /* --- OVERLAY AWAL --- */
+        /* --- OVERLAY AWAL UNTUK INTERAKSI PENGGUNA --- */
         #start-overlay {
             position: absolute; top: 0; left: 0;
             width: 100vw; height: 100vh;
@@ -31,7 +31,6 @@
             animation: blink 1.5s infinite;
         }
 
-        /* --- KAMERA --- */
         #camera-feed {
             position: absolute; top: 0; left: 0;
             width: 100vw; height: 100vh;
@@ -47,14 +46,13 @@
             #camera-feed { transform: none; }
         }
 
-        /* --- HUD --- */
         #hud-overlay {
             position: absolute; top: 0; left: 0;
             width: 100%; height: 100%;
-            z-index: 10; pointer-events: none; /* Cegah blokir sentuhan */
+            z-index: 10; pointer-events: none; /* Tembus klik ke elemen di bawahnya */
             color: rgba(0, 255, 0, 0.8);
             text-shadow: 0 0 8px rgba(0, 255, 0, 0.8);
-            display: none;
+            display: none; 
         }
 
         .vignette {
@@ -105,31 +103,26 @@
         @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0; } 100% { opacity: 1; } }
         .rec-dot { color: red; text-shadow: 0 0 8px red; animation: blink 1.5s infinite; }
 
-        /* --- TOMBOL SENTER --- */
-        #flashlight-btn {
+        /* Tombol Senter / IR Illuminator */
+        #torch-btn {
             position: absolute;
-            bottom: 80px; left: 50%;
+            bottom: 40px;
+            left: 50%;
             transform: translateX(-50%);
             padding: 10px 20px;
-            background: rgba(0, 200, 0, 0.1);
+            background-color: rgba(0, 50, 0, 0.5);
             border: 2px solid rgba(0, 255, 0, 0.8);
             color: rgba(0, 255, 0, 0.8);
             font-family: 'Courier New', Courier, monospace;
-            font-size: 14px; font-weight: bold;
-            text-shadow: 0 0 8px rgba(0, 255, 0, 0.8);
-            box-shadow: 0 0 10px rgba(0, 255, 0, 0.4), inset 0 0 10px rgba(0, 255, 0, 0.4);
+            font-size: 14px;
+            font-weight: bold;
             cursor: pointer;
-            pointer-events: auto; /* Mengizinkan klik pada tombol */
+            pointer-events: auto; /* Mengizinkan klik meskipun di dalam HUD */
+            box-shadow: 0 0 10px rgba(0, 255, 0, 0.4);
             transition: all 0.2s;
         }
-        #flashlight-btn:active {
-            background: rgba(0, 255, 0, 0.4);
-        }
-        /* Style saat senter menyala */
-        .torch-on {
-            background: rgba(0, 255, 0, 0.3) !important;
-            color: white !important;
-            border-color: white !important;
+        #torch-btn:active {
+            transform: translateX(-50%) scale(0.95);
         }
     </style>
 </head>
@@ -154,32 +147,32 @@
             <span class="rec-dot">●</span> REC
         </div>
         <div class="hud-text text-top-right">
-            IR: ON<br>NVG-M1
+            NVG-M1
         </div>
-        
-        <button id="flashlight-btn">FLASHLIGHT: OFF</button>
-
         <div class="hud-text text-bottom-left" id="gps-coords">
             LAT: SEARCHING...<br>LON: SEARCHING...
         </div>
         <div class="hud-text text-bottom-right" id="clock">
             00:00:00
         </div>
+
+        <button id="torch-btn">IR FLASH: OFF</button>
     </div>
 
     <script>
+        // Variabel Global
         const noSleep = new NoSleep();
         const startOverlay = document.getElementById('start-overlay');
         const hudOverlay = document.getElementById('hud-overlay');
-        let videoTrack; // Variabel untuk menyimpan track video (dibutuhkan untuk senter)
+        let videoTrack = null;
         let isTorchOn = false;
 
+        // Saat layar disentuh pertama kali
         startOverlay.addEventListener('click', function enableSystem() {
             noSleep.enable();
             
             const docElm = document.documentElement;
             if (docElm.requestFullscreen) { docElm.requestFullscreen(); }
-            else if (docElm.mozRequestFullScreen) { docElm.mozRequestFullScreen(); }
             else if (docElm.webkitRequestFullScreen) { docElm.webkitRequestFullScreen(); }
             
             startOverlay.style.display = 'none';
@@ -188,54 +181,57 @@
             startGPS();
         }, false);
 
-        // --- AKSES KAMERA & SENTER ---
+        // --- AKSES KAMERA ---
         const video = document.getElementById('camera-feed');
         navigator.mediaDevices.getUserMedia({
-            video: { 
-                facingMode: 'environment',
-                // Minta izin senter secara opsional saat kamera dimulai
-                advanced: [{ torch: false }] 
-            }
+            video: { facingMode: 'environment' }
         })
-        .then(stream => { 
-            video.srcObject = stream; 
-            // Ambil track video pertama untuk dikontrol senternya
+        .then(function(stream) {
+            video.srcObject = stream;
+            // Ambil track video untuk kontrol senter
             videoTrack = stream.getVideoTracks()[0];
         })
-        .catch(err => { console.error("Kamera error:", err); });
+        .catch(function(err) {
+            console.error("Kamera error:", err);
+            alert("Tidak bisa mengakses kamera.");
+        });
 
-        // Fungsi Toggle Senter
-        const flashBtn = document.getElementById('flashlight-btn');
-        flashBtn.addEventListener('click', async () => {
+        // --- KONTROL SENTER (FLASHLIGHT) ---
+        const torchBtn = document.getElementById('torch-btn');
+        torchBtn.addEventListener('click', function() {
             if (!videoTrack) return;
 
-            try {
-                // Cek apakah perangkat/browser mendukung pengontrolan senter
+            // Cek kemampuan browser mendukung API kontrol senter
+            if (typeof videoTrack.getCapabilities === 'function') {
                 const capabilities = videoTrack.getCapabilities();
                 if (!capabilities.torch) {
-                    flashBtn.innerText = "FLASHLIGHT: N/A";
+                    alert("Browser atau perangkat ini tidak mendukung kontrol lampu flash.");
                     return;
                 }
-
-                // Ubah status
-                isTorchOn = !isTorchOn;
-                await videoTrack.applyConstraints({
-                    advanced: [{ torch: isTorchOn }]
-                });
-
-                // Update UI Tombol
-                if (isTorchOn) {
-                    flashBtn.innerText = "FLASHLIGHT: ON";
-                    flashBtn.classList.add('torch-on');
-                } else {
-                    flashBtn.innerText = "FLASHLIGHT: OFF";
-                    flashBtn.classList.remove('torch-on');
-                }
-
-            } catch (err) {
-                console.error("Gagal menyalakan senter:", err);
-                flashBtn.innerText = "ERROR";
             }
+
+            isTorchOn = !isTorchOn;
+            
+            // Terapkan constraint senter
+            videoTrack.applyConstraints({
+                advanced: [{ torch: isTorchOn }]
+            })
+            .then(function() {
+                // Ubah tampilan tombol saat menyala
+                torchBtn.innerText = "IR FLASH: " + (isTorchOn ? "ON" : "OFF");
+                if (isTorchOn) {
+                    torchBtn.style.backgroundColor = "rgba(0, 255, 0, 0.8)";
+                    torchBtn.style.color = "black";
+                } else {
+                    torchBtn.style.backgroundColor = "rgba(0, 50, 0, 0.5)";
+                    torchBtn.style.color = "rgba(0, 255, 0, 0.8)";
+                }
+            })
+            .catch(function(err) {
+                console.error("Senter error:", err);
+                alert("Gagal menyalakan senter. API mungkin diblokir di perangkat ini.");
+                isTorchOn = !isTorchOn; // Kembalikan state boolean jika gagal
+            });
         });
 
         // --- JAM DIGITAL ---
@@ -266,12 +262,12 @@
             const gpsElement = document.getElementById('gps-coords');
             if ("geolocation" in navigator) {
                 navigator.geolocation.watchPosition(
-                    (position) => {
+                    function(position) {
                         const lat = formatDMS(position.coords.latitude, true);
                         const lon = formatDMS(position.coords.longitude, false);
                         gpsElement.innerHTML = `LAT: ${lat}<br>LON: ${lon}`;
                     },
-                    (error) => {
+                    function(error) {
                         gpsElement.innerHTML = `GPS: ERROR<br>NO SIGNAL`;
                     },
                     { enableHighAccuracy: true, maximumAge: 10000, timeout: 5000 }
