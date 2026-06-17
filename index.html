@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>DIY Night Vision HUD + Real GPS (Front Cam Fix)</title>
+    <title>DIY Night Vision HUD + Real GPS + NoSleep</title>
     
     <script src="https://cdnjs.cloudflare.com/ajax/libs/nosleep/0.12.0/NoSleep.min.js"></script>
 
@@ -24,16 +24,11 @@
             display: flex; flex-direction: column;
             justify-content: center; align-items: center;
             z-index: 50; cursor: pointer;
-            text-align: center; padding: 20px; box-sizing: border-box;
         }
         .start-text {
             font-size: 20px; font-weight: bold;
             text-shadow: 0 0 10px rgba(0, 255, 0, 0.8);
             animation: blink 1.5s infinite;
-            margin-bottom: 20px;
-        }
-        .instruction {
-            font-size: 14px; color: rgba(255, 255, 255, 0.7);
         }
 
         #camera-feed {
@@ -57,7 +52,7 @@
             z-index: 10; pointer-events: none;
             color: rgba(0, 255, 0, 0.8);
             text-shadow: 0 0 8px rgba(0, 255, 0, 0.8);
-            display: none; 
+            display: none; /* Sembunyikan HUD sampai layar ditekan */
         }
 
         .vignette {
@@ -112,9 +107,7 @@
 <body>
 
     <div id="start-overlay">
-        <div class="instruction">LANGKAH 1: NYALAKAN SENTER DARI QUICK PANEL SEKARANG</div>
-        <br>
-        <div class="start-text">LANGKAH 2: TAP LAYAR UNTUK MULAI</div>
+        <div class="start-text">TAP SCREEN TO ACTIVATE SYSTEM</div>
     </div>
 
     <video id="camera-feed" autoplay playsinline></video>
@@ -132,7 +125,7 @@
             <span class="rec-dot">●</span> REC
         </div>
         <div class="hud-text text-top-right">
-            NVG-M1<br>FRONT-CAM
+            IR: ON<br>NVG-M1
         </div>
         <div class="hud-text text-bottom-left" id="gps-coords">
             LAT: SEARCHING...<br>LON: SEARCHING...
@@ -143,48 +136,37 @@
     </div>
 
     <script>
+        // Inisialisasi NoSleep
         const noSleep = new NoSleep();
         const startOverlay = document.getElementById('start-overlay');
         const hudOverlay = document.getElementById('hud-overlay');
-        const video = document.getElementById('camera-feed');
 
-        // Fungsi menyalakan kamera dipindah ke DALAM event listener
-        // agar tidak memonopoli kamera saat web pertama kali dimuat
-        function startCamera() {
-            navigator.mediaDevices.getUserMedia({
-                video: { facingMode: 'user' } 
-            })
-            .then(function(stream) {
-                video.srcObject = stream;
-            })
-            .catch(function(err) {
-                console.error("Kamera error:", err);
-                navigator.mediaDevices.getUserMedia({ video: true })
-                    .then(function(fallbackStream) { video.srcObject = fallbackStream; })
-                    .catch(function(fallbackErr) { alert("Tidak bisa mengakses modul kamera."); });
-            });
-        }
-
-        // Saat layar disentuh pertama kali
+        // Fungsi yang berjalan saat layar disentuh pertama kali
         startOverlay.addEventListener('click', function enableSystem() {
-            // 1. Minta NoSleep
+            // 1. Aktifkan NoSleep (Layar tidak akan mati)
             noSleep.enable();
             
-            // 2. Minta Fullscreen
+            // 2. Minta mode Fullscreen (Bagus untuk imersi di browser lama)
             const docElm = document.documentElement;
             if (docElm.requestFullscreen) { docElm.requestFullscreen(); }
+            else if (docElm.mozRequestFullScreen) { docElm.mozRequestFullScreen(); }
             else if (docElm.webkitRequestFullScreen) { docElm.webkitRequestFullScreen(); }
             
-            // 3. Ubah UI
+            // 3. Sembunyikan layar awal dan tampilkan HUD
             startOverlay.style.display = 'none';
             hudOverlay.style.display = 'block';
 
-            // 4. NYALAKAN KAMERA (Baru dilakukan setelah layar ditap)
-            startCamera();
-
-            // 5. Nyalakan GPS
+            // 4. Mulai GPS setelah interaksi pengguna
             startGPS();
         }, false);
+
+        // --- AKSES KAMERA ---
+        const video = document.getElementById('camera-feed');
+        navigator.mediaDevices.getUserMedia({
+            video: { facingMode: 'environment' }
+        })
+        .then(stream => { video.srcObject = stream; })
+        .catch(err => { console.error("Kamera error:", err); });
 
         // --- JAM DIGITAL ---
         function updateClock() {
@@ -214,13 +196,14 @@
             const gpsElement = document.getElementById('gps-coords');
             if ("geolocation" in navigator) {
                 navigator.geolocation.watchPosition(
-                    function(position) {
+                    (position) => {
                         const lat = formatDMS(position.coords.latitude, true);
                         const lon = formatDMS(position.coords.longitude, false);
                         gpsElement.innerHTML = `LAT: ${lat}<br>LON: ${lon}`;
                     },
-                    function(error) {
+                    (error) => {
                         gpsElement.innerHTML = `GPS: ERROR<br>NO SIGNAL`;
+                        console.warn("GPS Error:", error.message);
                     },
                     { enableHighAccuracy: true, maximumAge: 10000, timeout: 5000 }
                 );
