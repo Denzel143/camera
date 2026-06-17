@@ -3,64 +3,46 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>DIY Night Vision HUD</title>
+    <title>DIY Night Vision HUD + Real GPS</title>
     <style>
-        /* Reset margin & memastikan layar penuh */
         body, html {
-            margin: 0;
-            padding: 0;
-            width: 100%;
-            height: 100%;
-            background-color: black;
-            overflow: hidden;
-            font-family: 'Courier New', Courier, monospace; /* Font gaya militer/teknologi */
+            margin: 0; padding: 0;
+            width: 100%; height: 100%;
+            background-color: black; overflow: hidden;
+            font-family: 'Courier New', Courier, monospace;
         }
 
-        /* --- PENGATURAN KAMERA --- */
         #camera-feed {
-            position: absolute;
-            top: 0; left: 0;
-            width: 100vw;
-            height: 100vh;
+            position: absolute; top: 0; left: 0;
+            width: 100vw; height: 100vh;
             object-fit: cover;
-            filter: grayscale(100%); /* Efek monokrom tetap dipertahankan */
+            filter: grayscale(100%);
             z-index: 1;
         }
 
-        /* Orientasi Potret: Flipped vertical & mirrored (horizontal) */
         @media (orientation: portrait) {
             #camera-feed { transform: scale(-1, -1); }
         }
-
-        /* Orientasi Lanskap: Normal */
         @media (orientation: landscape) {
             #camera-feed { transform: none; }
         }
 
-
-        /* --- PENGATURAN HUD (HEAD-UP DISPLAY) --- */
         #hud-overlay {
-            position: absolute;
-            top: 0; left: 0;
+            position: absolute; top: 0; left: 0;
             width: 100%; height: 100%;
-            z-index: 10;
-            pointer-events: none; /* Agar overlay tidak menghalangi sentuhan ke layar */
-            color: rgba(0, 255, 0, 0.8); /* Warna hijau neon khas NVG */
+            z-index: 10; pointer-events: none;
+            color: rgba(0, 255, 0, 0.8);
             text-shadow: 0 0 8px rgba(0, 255, 0, 0.8);
         }
 
-        /* Efek Vignette (gelap di pinggir layar seperti lensa) */
         .vignette {
-            position: absolute;
-            top: 0; left: 0;
+            position: absolute; top: 0; left: 0;
             width: 100%; height: 100%;
             box-shadow: inset 0 0 120px rgba(0,0,0,0.9);
         }
 
-        /* Crosshair Tengah */
         .crosshair {
-            position: absolute;
-            top: 50%; left: 50%;
+            position: absolute; top: 50%; left: 50%;
             transform: translate(-50%, -50%);
             width: 80px; height: 80px;
             border: 2px solid rgba(0, 255, 0, 0.6);
@@ -80,7 +62,6 @@
             box-shadow: 0 0 5px rgba(0, 255, 0, 0.8);
         }
 
-        /* Sudut Bingkai HUD */
         .corner {
             position: absolute;
             width: 40px; height: 40px;
@@ -93,25 +74,17 @@
         .bottom-left { bottom: 30px; left: 30px; border-width: 0 0 4px 4px; }
         .bottom-right { bottom: 30px; right: 30px; border-width: 0 4px 4px 0; }
 
-        /* Teks Indikator */
         .hud-text {
             position: absolute;
-            font-size: 16px;
-            font-weight: bold;
-            letter-spacing: 2px;
+            font-size: 16px; font-weight: bold; letter-spacing: 2px;
         }
         .text-top-left { top: 40px; left: 80px; }
         .text-top-right { top: 40px; right: 80px; }
         .text-bottom-left { bottom: 40px; left: 80px; }
         .text-bottom-right { bottom: 40px; right: 80px; text-align: right;}
 
-        /* Animasi berkedip untuk indikator REC */
         @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0; } 100% { opacity: 1; } }
-        .rec-dot {
-            color: red;
-            text-shadow: 0 0 8px red;
-            animation: blink 1.5s infinite;
-        }
+        .rec-dot { color: red; text-shadow: 0 0 8px red; animation: blink 1.5s infinite; }
     </style>
 </head>
 <body>
@@ -133,8 +106,8 @@
         <div class="hud-text text-top-right">
             IR: ON<br>NVG-M1
         </div>
-        <div class="hud-text text-bottom-left">
-            LAT: 06°58'S<br>LON: 110°25'E
+        <div class="hud-text text-bottom-left" id="gps-coords">
+            LAT: SEARCHING...<br>LON: SEARCHING...
         </div>
         <div class="hud-text text-bottom-right" id="clock">
             00:00:00
@@ -142,25 +115,63 @@
     </div>
 
     <script>
-        // Akses Kamera
+        // 1. AKSES KAMERA
         const video = document.getElementById('camera-feed');
         navigator.mediaDevices.getUserMedia({
             video: { facingMode: 'environment' }
         })
         .then(stream => { video.srcObject = stream; })
-        .catch(err => {
-            console.error("Gagal mengakses kamera:", err);
-            alert("Tidak dapat mengakses kamera.");
-        });
+        .catch(err => { console.error("Kamera error:", err); });
 
-        // Jam Digital HUD agar terlihat hidup
+        // 2. JAM DIGITAL
         function updateClock() {
             const now = new Date();
-            const timeString = now.toLocaleTimeString('id-ID', { hour12: false });
-            document.getElementById('clock').innerText = timeString;
+            document.getElementById('clock').innerText = now.toLocaleTimeString('id-ID', { hour12: false });
         }
         setInterval(updateClock, 1000);
-        updateClock(); // Panggil sekali agar langsung muncul
+        updateClock();
+
+        // 3. AKSES GPS LOKASI ASLI
+        // Fungsi untuk mengubah desimal menjadi format militer DMS (Derajat, Menit, Detik)
+        function formatDMS(coordinate, isLatitude) {
+            const absolute = Math.abs(coordinate);
+            const degrees = Math.floor(absolute);
+            const minutesNotTruncated = (absolute - degrees) * 60;
+            const minutes = Math.floor(minutesNotTruncated);
+            const seconds = Math.floor((minutesNotTruncated - minutes) * 60);
+            
+            const direction = coordinate >= 0 
+                ? (isLatitude ? 'N' : 'E') 
+                : (isLatitude ? 'S' : 'W');
+
+            // Tambahkan angka 0 di depan agar format selalu rata (misal: 06° bukan 6°)
+            const degStr = String(degrees).padStart(isLatitude ? 2 : 3, '0');
+            const minStr = String(minutes).padStart(2, '0');
+            const secStr = String(seconds).padStart(2, '0');
+
+            return `${degStr}°${minStr}'${secStr}"${direction}`;
+        }
+
+        const gpsElement = document.getElementById('gps-coords');
+
+        // Cek dukungan GPS di browser
+        if ("geolocation" in navigator) {
+            // watchPosition terus memperbarui lokasi jika kamu bergerak
+            navigator.geolocation.watchPosition(
+                (position) => {
+                    const lat = formatDMS(position.coords.latitude, true);
+                    const lon = formatDMS(position.coords.longitude, false);
+                    gpsElement.innerHTML = `LAT: ${lat}<br>LON: ${lon}`;
+                },
+                (error) => {
+                    gpsElement.innerHTML = `GPS: ERROR<br>NO SIGNAL`;
+                    console.warn("GPS Error:", error.message);
+                },
+                { enableHighAccuracy: true, maximumAge: 10000, timeout: 5000 }
+            );
+        } else {
+            gpsElement.innerHTML = `GPS: N/A<br>UNSUPPORTED`;
+        }
     </script>
 </body>
 </html>
