@@ -5,55 +5,57 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>DIY Night Vision Camera</title>
     <style>
+        /* Reset margin & memastikan layar penuh tanpa scroll */
         body, html {
             margin: 0;
             padding: 0;
             width: 100%;
             height: 100%;
             background-color: black;
-            overflow: hidden; /* Mencegah scrolling */
+            overflow: hidden;
         }
 
-        #camera {
+        #camera-feed {
             width: 100vw;
             height: 100vh;
             object-fit: cover; /* Membuat video memenuhi layar (full screen) */
-            
-            /* Efek Monokrom, Flipped Vertical (Y), dan Mirrored (X) */
-            filter: grayscale(100%);
-            transform: scale(-1, -1);
+            filter: grayscale(100%); /* Membuat tampilan menjadi monokrom */
+        }
+
+        /* Orientasi Potret: Flipped vertical & mirrored (horizontal) */
+        @media (orientation: portrait) {
+            #camera-feed {
+                transform: scale(-1, -1);
+            }
+        }
+
+        /* Orientasi Lanskap: Normal (tidak di-flip/mirror) */
+        @media (orientation: landscape) {
+            #camera-feed {
+                transform: none;
+            }
         }
     </style>
 </head>
 <body>
-
-    <video id="camera" autoplay playsinline></video>
+    <video id="camera-feed" autoplay playsinline></video>
 
     <script>
-        const videoElement = document.getElementById('camera');
+        const video = document.getElementById('camera-feed');
 
-        // Mengakses kamera belakang (environment) dengan resolusi tinggi
-        const constraints = {
+        // Meminta akses ke kamera belakang (environment)
+        navigator.mediaDevices.getUserMedia({
             video: {
-                facingMode: 'environment', 
-                width: { ideal: 1920 },
-                height: { ideal: 1080 }
+                facingMode: 'environment' // Prioritaskan kamera belakang
             }
-        };
-
-        async function startCamera() {
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia(constraints);
-                videoElement.srcObject = stream;
-            } catch (err) {
-                console.error("Gagal mengakses kamera: ", err);
-                alert("Tidak dapat mengakses kamera. Pastikan izin kamera sudah diberikan di browser.");
-            }
-        }
-
-        // Jalankan kamera saat halaman dimuat
-        startCamera();
+        })
+        .then(stream => {
+            video.srcObject = stream;
+        })
+        .catch(err => {
+            console.error("Gagal mengakses kamera:", err);
+            alert("Tidak dapat mengakses kamera. Pastikan browser memiliki izin untuk menggunakan kamera.");
+        });
     </script>
-
 </body>
 </html>
