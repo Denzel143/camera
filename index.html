@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>DIY Night Vision HUD + Real GPS + NoSleep</title>
+    <title>DIY Night Vision HUD + Real GPS + NoSleep + Flashlight</title>
     
     <script src="https://cdnjs.cloudflare.com/ajax/libs/nosleep/0.12.0/NoSleep.min.js"></script>
 
@@ -15,7 +15,7 @@
             font-family: 'Courier New', Courier, monospace;
         }
 
-        /* --- OVERLAY AWAL UNTUK INTERAKSI PENGGUNA --- */
+        /* --- OVERLAY AWAL --- */
         #start-overlay {
             position: absolute; top: 0; left: 0;
             width: 100vw; height: 100vh;
@@ -31,6 +31,7 @@
             animation: blink 1.5s infinite;
         }
 
+        /* --- KAMERA --- */
         #camera-feed {
             position: absolute; top: 0; left: 0;
             width: 100vw; height: 100vh;
@@ -46,13 +47,14 @@
             #camera-feed { transform: none; }
         }
 
+        /* --- HUD --- */
         #hud-overlay {
             position: absolute; top: 0; left: 0;
             width: 100%; height: 100%;
-            z-index: 10; pointer-events: none;
+            z-index: 10; pointer-events: none; /* Cegah blokir sentuhan */
             color: rgba(0, 255, 0, 0.8);
             text-shadow: 0 0 8px rgba(0, 255, 0, 0.8);
-            display: none; /* Sembunyikan HUD sampai layar ditekan */
+            display: none;
         }
 
         .vignette {
@@ -102,6 +104,33 @@
 
         @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0; } 100% { opacity: 1; } }
         .rec-dot { color: red; text-shadow: 0 0 8px red; animation: blink 1.5s infinite; }
+
+        /* --- TOMBOL SENTER --- */
+        #flashlight-btn {
+            position: absolute;
+            bottom: 80px; left: 50%;
+            transform: translateX(-50%);
+            padding: 10px 20px;
+            background: rgba(0, 200, 0, 0.1);
+            border: 2px solid rgba(0, 255, 0, 0.8);
+            color: rgba(0, 255, 0, 0.8);
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 14px; font-weight: bold;
+            text-shadow: 0 0 8px rgba(0, 255, 0, 0.8);
+            box-shadow: 0 0 10px rgba(0, 255, 0, 0.4), inset 0 0 10px rgba(0, 255, 0, 0.4);
+            cursor: pointer;
+            pointer-events: auto; /* Mengizinkan klik pada tombol */
+            transition: all 0.2s;
+        }
+        #flashlight-btn:active {
+            background: rgba(0, 255, 0, 0.4);
+        }
+        /* Style saat senter menyala */
+        .torch-on {
+            background: rgba(0, 255, 0, 0.3) !important;
+            color: white !important;
+            border-color: white !important;
+        }
     </style>
 </head>
 <body>
@@ -127,6 +156,9 @@
         <div class="hud-text text-top-right">
             IR: ON<br>NVG-M1
         </div>
+        
+        <button id="flashlight-btn">FLASHLIGHT: OFF</button>
+
         <div class="hud-text text-bottom-left" id="gps-coords">
             LAT: SEARCHING...<br>LON: SEARCHING...
         </div>
@@ -136,37 +168,75 @@
     </div>
 
     <script>
-        // Inisialisasi NoSleep
         const noSleep = new NoSleep();
         const startOverlay = document.getElementById('start-overlay');
         const hudOverlay = document.getElementById('hud-overlay');
+        let videoTrack; // Variabel untuk menyimpan track video (dibutuhkan untuk senter)
+        let isTorchOn = false;
 
-        // Fungsi yang berjalan saat layar disentuh pertama kali
         startOverlay.addEventListener('click', function enableSystem() {
-            // 1. Aktifkan NoSleep (Layar tidak akan mati)
             noSleep.enable();
             
-            // 2. Minta mode Fullscreen (Bagus untuk imersi di browser lama)
             const docElm = document.documentElement;
             if (docElm.requestFullscreen) { docElm.requestFullscreen(); }
             else if (docElm.mozRequestFullScreen) { docElm.mozRequestFullScreen(); }
             else if (docElm.webkitRequestFullScreen) { docElm.webkitRequestFullScreen(); }
             
-            // 3. Sembunyikan layar awal dan tampilkan HUD
             startOverlay.style.display = 'none';
             hudOverlay.style.display = 'block';
 
-            // 4. Mulai GPS setelah interaksi pengguna
             startGPS();
         }, false);
 
-        // --- AKSES KAMERA ---
+        // --- AKSES KAMERA & SENTER ---
         const video = document.getElementById('camera-feed');
         navigator.mediaDevices.getUserMedia({
-            video: { facingMode: 'environment' }
+            video: { 
+                facingMode: 'environment',
+                // Minta izin senter secara opsional saat kamera dimulai
+                advanced: [{ torch: false }] 
+            }
         })
-        .then(stream => { video.srcObject = stream; })
+        .then(stream => { 
+            video.srcObject = stream; 
+            // Ambil track video pertama untuk dikontrol senternya
+            videoTrack = stream.getVideoTracks()[0];
+        })
         .catch(err => { console.error("Kamera error:", err); });
+
+        // Fungsi Toggle Senter
+        const flashBtn = document.getElementById('flashlight-btn');
+        flashBtn.addEventListener('click', async () => {
+            if (!videoTrack) return;
+
+            try {
+                // Cek apakah perangkat/browser mendukung pengontrolan senter
+                const capabilities = videoTrack.getCapabilities();
+                if (!capabilities.torch) {
+                    flashBtn.innerText = "FLASHLIGHT: N/A";
+                    return;
+                }
+
+                // Ubah status
+                isTorchOn = !isTorchOn;
+                await videoTrack.applyConstraints({
+                    advanced: [{ torch: isTorchOn }]
+                });
+
+                // Update UI Tombol
+                if (isTorchOn) {
+                    flashBtn.innerText = "FLASHLIGHT: ON";
+                    flashBtn.classList.add('torch-on');
+                } else {
+                    flashBtn.innerText = "FLASHLIGHT: OFF";
+                    flashBtn.classList.remove('torch-on');
+                }
+
+            } catch (err) {
+                console.error("Gagal menyalakan senter:", err);
+                flashBtn.innerText = "ERROR";
+            }
+        });
 
         // --- JAM DIGITAL ---
         function updateClock() {
@@ -203,7 +273,6 @@
                     },
                     (error) => {
                         gpsElement.innerHTML = `GPS: ERROR<br>NO SIGNAL`;
-                        console.warn("GPS Error:", error.message);
                     },
                     { enableHighAccuracy: true, maximumAge: 10000, timeout: 5000 }
                 );
