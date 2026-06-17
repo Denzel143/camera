@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>DIY Night Vision HUD + Real GPS + NoSleep + Flashlight</title>
+    <title>DIY Night Vision HUD + Real GPS + NoSleep (Front Cam)</title>
     
     <script src="https://cdnjs.cloudflare.com/ajax/libs/nosleep/0.12.0/NoSleep.min.js"></script>
 
@@ -39,6 +39,7 @@
             z-index: 1;
         }
 
+        /* Aturan flip sesuai orientasi yang kamu minta */
         @media (orientation: portrait) {
             #camera-feed { transform: scale(-1, -1); }
         }
@@ -49,7 +50,7 @@
         #hud-overlay {
             position: absolute; top: 0; left: 0;
             width: 100%; height: 100%;
-            z-index: 10; pointer-events: none; /* Tembus klik ke elemen di bawahnya */
+            z-index: 10; pointer-events: none; /* Mengizinkan interaksi usap layar (swipe) */
             color: rgba(0, 255, 0, 0.8);
             text-shadow: 0 0 8px rgba(0, 255, 0, 0.8);
             display: none; 
@@ -102,28 +103,6 @@
 
         @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0; } 100% { opacity: 1; } }
         .rec-dot { color: red; text-shadow: 0 0 8px red; animation: blink 1.5s infinite; }
-
-        /* Tombol Senter / IR Illuminator */
-        #torch-btn {
-            position: absolute;
-            bottom: 40px;
-            left: 50%;
-            transform: translateX(-50%);
-            padding: 10px 20px;
-            background-color: rgba(0, 50, 0, 0.5);
-            border: 2px solid rgba(0, 255, 0, 0.8);
-            color: rgba(0, 255, 0, 0.8);
-            font-family: 'Courier New', Courier, monospace;
-            font-size: 14px;
-            font-weight: bold;
-            cursor: pointer;
-            pointer-events: auto; /* Mengizinkan klik meskipun di dalam HUD */
-            box-shadow: 0 0 10px rgba(0, 255, 0, 0.4);
-            transition: all 0.2s;
-        }
-        #torch-btn:active {
-            transform: translateX(-50%) scale(0.95);
-        }
     </style>
 </head>
 <body>
@@ -147,7 +126,7 @@
             <span class="rec-dot">●</span> REC
         </div>
         <div class="hud-text text-top-right">
-            NVG-M1
+            NVG-M1<br>FRONT-CAM
         </div>
         <div class="hud-text text-bottom-left" id="gps-coords">
             LAT: SEARCHING...<br>LON: SEARCHING...
@@ -155,22 +134,18 @@
         <div class="hud-text text-bottom-right" id="clock">
             00:00:00
         </div>
-
-        <button id="torch-btn">IR FLASH: OFF</button>
     </div>
 
     <script>
-        // Variabel Global
         const noSleep = new NoSleep();
         const startOverlay = document.getElementById('start-overlay');
         const hudOverlay = document.getElementById('hud-overlay');
-        let videoTrack = null;
-        let isTorchOn = false;
 
         // Saat layar disentuh pertama kali
         startOverlay.addEventListener('click', function enableSystem() {
             noSleep.enable();
             
+            // Fullscreen mode
             const docElm = document.documentElement;
             if (docElm.requestFullscreen) { docElm.requestFullscreen(); }
             else if (docElm.webkitRequestFullScreen) { docElm.webkitRequestFullScreen(); }
@@ -181,57 +156,21 @@
             startGPS();
         }, false);
 
-        // --- AKSES KAMERA ---
+        // --- AKSES KAMERA DEPAN ---
         const video = document.getElementById('camera-feed');
         navigator.mediaDevices.getUserMedia({
-            video: { facingMode: 'environment' }
+            // Mengubah ke 'user' karena kamu memakai kamera depan
+            video: { facingMode: 'user' } 
         })
         .then(function(stream) {
             video.srcObject = stream;
-            // Ambil track video untuk kontrol senter
-            videoTrack = stream.getVideoTracks()[0];
         })
         .catch(function(err) {
             console.error("Kamera error:", err);
-            alert("Tidak bisa mengakses kamera.");
-        });
-
-        // --- KONTROL SENTER (FLASHLIGHT) ---
-        const torchBtn = document.getElementById('torch-btn');
-        torchBtn.addEventListener('click', function() {
-            if (!videoTrack) return;
-
-            // Cek kemampuan browser mendukung API kontrol senter
-            if (typeof videoTrack.getCapabilities === 'function') {
-                const capabilities = videoTrack.getCapabilities();
-                if (!capabilities.torch) {
-                    alert("Browser atau perangkat ini tidak mendukung kontrol lampu flash.");
-                    return;
-                }
-            }
-
-            isTorchOn = !isTorchOn;
-            
-            // Terapkan constraint senter
-            videoTrack.applyConstraints({
-                advanced: [{ torch: isTorchOn }]
-            })
-            .then(function() {
-                // Ubah tampilan tombol saat menyala
-                torchBtn.innerText = "IR FLASH: " + (isTorchOn ? "ON" : "OFF");
-                if (isTorchOn) {
-                    torchBtn.style.backgroundColor = "rgba(0, 255, 0, 0.8)";
-                    torchBtn.style.color = "black";
-                } else {
-                    torchBtn.style.backgroundColor = "rgba(0, 50, 0, 0.5)";
-                    torchBtn.style.color = "rgba(0, 255, 0, 0.8)";
-                }
-            })
-            .catch(function(err) {
-                console.error("Senter error:", err);
-                alert("Gagal menyalakan senter. API mungkin diblokir di perangkat ini.");
-                isTorchOn = !isTorchOn; // Kembalikan state boolean jika gagal
-            });
+            // Jika facingMode: user gagal, coba fallback tanpa facingMode
+            navigator.mediaDevices.getUserMedia({ video: true })
+                .then(function(fallbackStream) { video.srcObject = fallbackStream; })
+                .catch(function(fallbackErr) { alert("Tidak bisa mengakses modul kamera."); });
         });
 
         // --- JAM DIGITAL ---
