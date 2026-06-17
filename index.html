@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>DIY Night Vision HUD + Real GPS + NoSleep (Front Cam)</title>
+    <title>DIY Night Vision HUD + Real GPS (Front Cam Fix)</title>
     
     <script src="https://cdnjs.cloudflare.com/ajax/libs/nosleep/0.12.0/NoSleep.min.js"></script>
 
@@ -24,11 +24,16 @@
             display: flex; flex-direction: column;
             justify-content: center; align-items: center;
             z-index: 50; cursor: pointer;
+            text-align: center; padding: 20px; box-sizing: border-box;
         }
         .start-text {
             font-size: 20px; font-weight: bold;
             text-shadow: 0 0 10px rgba(0, 255, 0, 0.8);
             animation: blink 1.5s infinite;
+            margin-bottom: 20px;
+        }
+        .instruction {
+            font-size: 14px; color: rgba(255, 255, 255, 0.7);
         }
 
         #camera-feed {
@@ -39,7 +44,6 @@
             z-index: 1;
         }
 
-        /* Aturan flip sesuai orientasi yang kamu minta */
         @media (orientation: portrait) {
             #camera-feed { transform: scale(-1, -1); }
         }
@@ -50,7 +54,7 @@
         #hud-overlay {
             position: absolute; top: 0; left: 0;
             width: 100%; height: 100%;
-            z-index: 10; pointer-events: none; /* Mengizinkan interaksi usap layar (swipe) */
+            z-index: 10; pointer-events: none;
             color: rgba(0, 255, 0, 0.8);
             text-shadow: 0 0 8px rgba(0, 255, 0, 0.8);
             display: none; 
@@ -108,7 +112,9 @@
 <body>
 
     <div id="start-overlay">
-        <div class="start-text">TAP SCREEN TO ACTIVATE SYSTEM</div>
+        <div class="instruction">LANGKAH 1: NYALAKAN SENTER DARI QUICK PANEL SEKARANG</div>
+        <br>
+        <div class="start-text">LANGKAH 2: TAP LAYAR UNTUK MULAI</div>
     </div>
 
     <video id="camera-feed" autoplay playsinline></video>
@@ -140,38 +146,45 @@
         const noSleep = new NoSleep();
         const startOverlay = document.getElementById('start-overlay');
         const hudOverlay = document.getElementById('hud-overlay');
+        const video = document.getElementById('camera-feed');
+
+        // Fungsi menyalakan kamera dipindah ke DALAM event listener
+        // agar tidak memonopoli kamera saat web pertama kali dimuat
+        function startCamera() {
+            navigator.mediaDevices.getUserMedia({
+                video: { facingMode: 'user' } 
+            })
+            .then(function(stream) {
+                video.srcObject = stream;
+            })
+            .catch(function(err) {
+                console.error("Kamera error:", err);
+                navigator.mediaDevices.getUserMedia({ video: true })
+                    .then(function(fallbackStream) { video.srcObject = fallbackStream; })
+                    .catch(function(fallbackErr) { alert("Tidak bisa mengakses modul kamera."); });
+            });
+        }
 
         // Saat layar disentuh pertama kali
         startOverlay.addEventListener('click', function enableSystem() {
+            // 1. Minta NoSleep
             noSleep.enable();
             
-            // Fullscreen mode
+            // 2. Minta Fullscreen
             const docElm = document.documentElement;
             if (docElm.requestFullscreen) { docElm.requestFullscreen(); }
             else if (docElm.webkitRequestFullScreen) { docElm.webkitRequestFullScreen(); }
             
+            // 3. Ubah UI
             startOverlay.style.display = 'none';
             hudOverlay.style.display = 'block';
 
+            // 4. NYALAKAN KAMERA (Baru dilakukan setelah layar ditap)
+            startCamera();
+
+            // 5. Nyalakan GPS
             startGPS();
         }, false);
-
-        // --- AKSES KAMERA DEPAN ---
-        const video = document.getElementById('camera-feed');
-        navigator.mediaDevices.getUserMedia({
-            // Mengubah ke 'user' karena kamu memakai kamera depan
-            video: { facingMode: 'user' } 
-        })
-        .then(function(stream) {
-            video.srcObject = stream;
-        })
-        .catch(function(err) {
-            console.error("Kamera error:", err);
-            // Jika facingMode: user gagal, coba fallback tanpa facingMode
-            navigator.mediaDevices.getUserMedia({ video: true })
-                .then(function(fallbackStream) { video.srcObject = fallbackStream; })
-                .catch(function(fallbackErr) { alert("Tidak bisa mengakses modul kamera."); });
-        });
 
         // --- JAM DIGITAL ---
         function updateClock() {
