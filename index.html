@@ -3,13 +3,32 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>DIY Night Vision HUD + Real GPS</title>
+    <title>DIY Night Vision HUD + Real GPS + NoSleep</title>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/nosleep/0.12.0/NoSleep.min.js"></script>
+
     <style>
         body, html {
             margin: 0; padding: 0;
             width: 100%; height: 100%;
             background-color: black; overflow: hidden;
             font-family: 'Courier New', Courier, monospace;
+        }
+
+        /* --- OVERLAY AWAL UNTUK INTERAKSI PENGGUNA --- */
+        #start-overlay {
+            position: absolute; top: 0; left: 0;
+            width: 100vw; height: 100vh;
+            background-color: black;
+            color: rgba(0, 255, 0, 0.8);
+            display: flex; flex-direction: column;
+            justify-content: center; align-items: center;
+            z-index: 50; cursor: pointer;
+        }
+        .start-text {
+            font-size: 20px; font-weight: bold;
+            text-shadow: 0 0 10px rgba(0, 255, 0, 0.8);
+            animation: blink 1.5s infinite;
         }
 
         #camera-feed {
@@ -33,6 +52,7 @@
             z-index: 10; pointer-events: none;
             color: rgba(0, 255, 0, 0.8);
             text-shadow: 0 0 8px rgba(0, 255, 0, 0.8);
+            display: none; /* Sembunyikan HUD sampai layar ditekan */
         }
 
         .vignette {
@@ -63,10 +83,8 @@
         }
 
         .corner {
-            position: absolute;
-            width: 40px; height: 40px;
-            border-color: rgba(0, 255, 0, 0.8);
-            border-style: solid;
+            position: absolute; width: 40px; height: 40px;
+            border-color: rgba(0, 255, 0, 0.8); border-style: solid;
             box-shadow: 0 0 8px rgba(0,255,0,0.5);
         }
         .top-left { top: 30px; left: 30px; border-width: 4px 0 0 4px; }
@@ -75,8 +93,7 @@
         .bottom-right { bottom: 30px; right: 30px; border-width: 0 4px 4px 0; }
 
         .hud-text {
-            position: absolute;
-            font-size: 16px; font-weight: bold; letter-spacing: 2px;
+            position: absolute; font-size: 16px; font-weight: bold; letter-spacing: 2px;
         }
         .text-top-left { top: 40px; left: 80px; }
         .text-top-right { top: 40px; right: 80px; }
@@ -88,6 +105,10 @@
     </style>
 </head>
 <body>
+
+    <div id="start-overlay">
+        <div class="start-text">TAP SCREEN TO ACTIVATE SYSTEM</div>
+    </div>
 
     <video id="camera-feed" autoplay playsinline></video>
 
@@ -115,7 +136,31 @@
     </div>
 
     <script>
-        // 1. AKSES KAMERA
+        // Inisialisasi NoSleep
+        const noSleep = new NoSleep();
+        const startOverlay = document.getElementById('start-overlay');
+        const hudOverlay = document.getElementById('hud-overlay');
+
+        // Fungsi yang berjalan saat layar disentuh pertama kali
+        startOverlay.addEventListener('click', function enableSystem() {
+            // 1. Aktifkan NoSleep (Layar tidak akan mati)
+            noSleep.enable();
+            
+            // 2. Minta mode Fullscreen (Bagus untuk imersi di browser lama)
+            const docElm = document.documentElement;
+            if (docElm.requestFullscreen) { docElm.requestFullscreen(); }
+            else if (docElm.mozRequestFullScreen) { docElm.mozRequestFullScreen(); }
+            else if (docElm.webkitRequestFullScreen) { docElm.webkitRequestFullScreen(); }
+            
+            // 3. Sembunyikan layar awal dan tampilkan HUD
+            startOverlay.style.display = 'none';
+            hudOverlay.style.display = 'block';
+
+            // 4. Mulai GPS setelah interaksi pengguna
+            startGPS();
+        }, false);
+
+        // --- AKSES KAMERA ---
         const video = document.getElementById('camera-feed');
         navigator.mediaDevices.getUserMedia({
             video: { facingMode: 'environment' }
@@ -123,7 +168,7 @@
         .then(stream => { video.srcObject = stream; })
         .catch(err => { console.error("Kamera error:", err); });
 
-        // 2. JAM DIGITAL
+        // --- JAM DIGITAL ---
         function updateClock() {
             const now = new Date();
             document.getElementById('clock').innerText = now.toLocaleTimeString('id-ID', { hour12: false });
@@ -131,8 +176,7 @@
         setInterval(updateClock, 1000);
         updateClock();
 
-        // 3. AKSES GPS LOKASI ASLI
-        // Fungsi untuk mengubah desimal menjadi format militer DMS (Derajat, Menit, Detik)
+        // --- AKSES GPS ---
         function formatDMS(coordinate, isLatitude) {
             const absolute = Math.abs(coordinate);
             const degrees = Math.floor(absolute);
@@ -140,11 +184,7 @@
             const minutes = Math.floor(minutesNotTruncated);
             const seconds = Math.floor((minutesNotTruncated - minutes) * 60);
             
-            const direction = coordinate >= 0 
-                ? (isLatitude ? 'N' : 'E') 
-                : (isLatitude ? 'S' : 'W');
-
-            // Tambahkan angka 0 di depan agar format selalu rata (misal: 06° bukan 6°)
+            const direction = coordinate >= 0 ? (isLatitude ? 'N' : 'E') : (isLatitude ? 'S' : 'W');
             const degStr = String(degrees).padStart(isLatitude ? 2 : 3, '0');
             const minStr = String(minutes).padStart(2, '0');
             const secStr = String(seconds).padStart(2, '0');
@@ -152,25 +192,24 @@
             return `${degStr}°${minStr}'${secStr}"${direction}`;
         }
 
-        const gpsElement = document.getElementById('gps-coords');
-
-        // Cek dukungan GPS di browser
-        if ("geolocation" in navigator) {
-            // watchPosition terus memperbarui lokasi jika kamu bergerak
-            navigator.geolocation.watchPosition(
-                (position) => {
-                    const lat = formatDMS(position.coords.latitude, true);
-                    const lon = formatDMS(position.coords.longitude, false);
-                    gpsElement.innerHTML = `LAT: ${lat}<br>LON: ${lon}`;
-                },
-                (error) => {
-                    gpsElement.innerHTML = `GPS: ERROR<br>NO SIGNAL`;
-                    console.warn("GPS Error:", error.message);
-                },
-                { enableHighAccuracy: true, maximumAge: 10000, timeout: 5000 }
-            );
-        } else {
-            gpsElement.innerHTML = `GPS: N/A<br>UNSUPPORTED`;
+        function startGPS() {
+            const gpsElement = document.getElementById('gps-coords');
+            if ("geolocation" in navigator) {
+                navigator.geolocation.watchPosition(
+                    (position) => {
+                        const lat = formatDMS(position.coords.latitude, true);
+                        const lon = formatDMS(position.coords.longitude, false);
+                        gpsElement.innerHTML = `LAT: ${lat}<br>LON: ${lon}`;
+                    },
+                    (error) => {
+                        gpsElement.innerHTML = `GPS: ERROR<br>NO SIGNAL`;
+                        console.warn("GPS Error:", error.message);
+                    },
+                    { enableHighAccuracy: true, maximumAge: 10000, timeout: 5000 }
+                );
+            } else {
+                gpsElement.innerHTML = `GPS: N/A<br>UNSUPPORTED`;
+            }
         }
     </script>
 </body>
